@@ -1,0 +1,24 @@
+
+GitHub CLI PROCEDURES 
+
+git init  (Only first time)
+git status
+git add bitcoinblock.html.    you can list multiple files after git add separated by spaces. ie git add bitcoin.html bitcoin.py
+git commit -m "Add bitcoinblock.html"
+git push -u origin main  
+
+(git remote add origin https://github.com/Nedal-S/ecomprojects.git). Only first time
+
+
+All changes in the repo (new, modified, deleted files):
+git add .
+
+All changes of *.html 
+git add *.html
+
+to remove
+Remove from BOTH repo and local folder (default):
+git rm blockchain.htm
+
+Remove from repo ONLY keep the file locally (often used for things you now want ignored):
+git rm --cached blockchain.htm
