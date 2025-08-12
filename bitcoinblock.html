@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Bitcoin Block Miner & Date Lookup</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0b0f14; --card:#121822; --text:#e8eef9; --muted:#9fb3c8; --accent:#4da3ff; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+           background: var(--bg); color: var(--text); }
+    header { padding: 20px; text-align:center; border-bottom: 1px solid #1e2a3b; }
+    h1 { margin: 0 0 6px; font-weight: 700; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+    .card { background: var(--card); border: 1px solid #1e2a3b; border-radius: 16px; padding: 16px; box-shadow: 0 6px 22px rgba(0,0,0,.25); }
+    label { display:block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+    input, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #283449; background: #0e141d; color: var(--text); }
+    button { margin-top: 10px; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--accent);
+             color: #071321; font-weight: 700; cursor: pointer; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .kv { display:grid; grid-template-columns: 180px 1fr; gap:8px; margin-top:10px; }
+    .kv div { padding: 6px 10px; border-radius: 8px; background:#0e141d; border:1px solid #283449; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: #0e141d; border: 1px solid #283449; border-radius: 12px; padding: 12px; max-height: 420px; overflow: auto; }
+    footer { text-align:center; color: var(--muted); padding: 16px; font-size: 12px; }
+    code.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bitcoin Block Miner & Date Lookup</h1>
+    <div class="muted">Enter a block height. We’ll show the block’s date and try to identify the mining pool from the coinbase tag.</div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <label for="baseUrl">API Base URL (Esplora-compatible)</label>
+      <input id="baseUrl" type="text" value="https://blockstream.info/api" />
+      <div class="muted">To self-host, point this to your <code class="mono">electrs</code> (e.g., <code class="mono">https://your-host/api</code>).</div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label for="height">Block Height</label>
+          <input id="height" type="number" placeholder="e.g., 883181" value="883181" />
+          <button id="btnFetch">Fetch Block</button>
+        </div>
+        <div>
+          <label for="tz">Timezone for display</label>
+          <select id="tz">
+            <option value="America/New_York" selected>America/New_York</option>
+            <option value="UTC">UTC</option>
+            <option value="America/Los_Angeles">America/Los_Angeles</option>
+            <option value="Europe/London">Europe/London</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="status" class="muted" style="margin-top:10px;">Ready.</div>
+
+      <div class="kv" id="summary" style="display:none;">
+        <div>Height</div><div id="s_height"></div>
+        <div>Hash</div><div id="s_hash" title=""></div>
+        <div>Timestamp (Unix)</div><div id="s_ts"></div>
+        <div>Local Time</div><div id="s_local"></div>
+        <div>UTC Time</div><div id="s_utc"></div>
+        <div>Date (Local)</div><div id="s_date"></div>
+        <div>nTx</div><div id="s_ntx"></div>
+        <div>Weight</div><div id="s_weight"></div>
+        <div>Size (bytes)</div><div id="s_size"></div>
+        <div>Coinbase Tag (raw)</div><div id="s_cbtag" title=""></div>
+        <div>Likely Miner / Pool</div><div id="s_pool"></div>
+        <div>Payout Address (vout0)</div><div id="s_payout"></div>
+      </div>
+
+      <details style="margin-top:12px;">
+        <summary>Raw JSON (block)</summary>
+        <pre id="rawBlock">—</pre>
+      </details>
+      <details style="margin-top:12px;">
+        <summary>Raw JSON (coinbase tx)</summary>
+        <pre id="rawTx">—</pre>
+      </details>
+    </div>
+  </div>
+
+  <footer>Uses <code class="mono">/block-height</code> → hash, <code class="mono">/block</code>, and <code class="mono">/block/&lt;hash&gt;/txs</code> to read the coinbase tx.</footer>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const pretty = obj => JSON.stringify(obj, null, 2);
+
+    async function req(path, asText=false) {
+      const base = $('baseUrl').value.replace(/\/+$/,'');
+      const url = base + path;
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' }});
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText} - ${url}`);
+      return asText ? res.text() : res.json();
+    }
+
+    function fmtLocal(tsSec, tz="America/New_York") {
+      const d = new Date(tsSec * 1000);
+      return new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, year: 'numeric', month: 'short', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second:'2-digit'
+      }).format(d);
+    }
+    function fmtUTC(tsSec) {
+      const d = new Date(tsSec * 1000);
+      return d.toISOString().replace('T',' ').replace('Z',' UTC');
+    }
+    function fmtDateOnly(tsSec, tz="America/New_York") {
+      const d = new Date(tsSec * 1000);
+      return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' }).format(d);
+    }
+    function hexToAscii(hex) {
+      try {
+        if (!hex) return '';
+        const clean = hex.replace(/[^0-9a-fA-F]/g,'');
+        let out = '';
+        for (let i = 0; i < clean.length; i += 2) {
+          const byte = parseInt(clean.substr(i, 2), 16);
+          if (!isNaN(byte)) out += (byte >= 32 && byte <= 126) ? String.fromCharCode(byte) : '·';
+        }
+        return out;
+      } catch { return ''; }
+    }
+    function guessPool(tag) {
+      if (!tag) return 'Unknown';
+      const t = tag.toLowerCase();
+      const table = [
+        [/foundry/, 'Foundry USA'],
+        [/antpool|ant[p]?/, 'AntPool'],
+        [/f2pool/, 'F2Pool'],
+        [/viabtc/, 'ViaBTC'],
+        [/braiins|slush/, 'Braiins Pool (Slush)'],
+        [/luxor/, 'Luxor'],
+        [/binance/, 'Binance Pool'],
+        [/btc\.com|btccom/, 'BTC.com'],
+        [/marathon|mara/, 'Marathon'],
+        [/poolin/, 'Poolin'],
+        [/okx|okex/, 'OKX Pool'],
+        [/emcd/, 'EMCD'],
+        [/kucoin/, 'KuCoin Pool'],
+        [/rawpool|spider/, 'Spider/Rawpool'],
+      ];
+      for (const [re, name] of table) if (re.test(t)) return name;
+      return 'Unknown or Private Tag';
+    }
+
+    $('btnFetch').onclick = async () => {
+      const h = +$('height').value;
+      const tz = $('tz').value;
+      const status = $('status');
+      const summary = $('summary');
+      const rawBlock = $('rawBlock');
+      const rawTx = $('rawTx');
+
+      status.textContent = 'Loading…';
+      summary.style.display = 'none';
+      rawBlock.textContent = '—';
+      rawTx.textContent = '—';
+
+      try {
+        // Get hash from height (plain text)
+        const hashText = (await req(`/block-height/${h}`, true)).trim();
+
+        // Block details
+        const block = await req(`/block/${hashText}`);
+        $('s_height').textContent = block.height ?? h;
+        $('s_hash').textContent = block.id || hashText;
+        $('s_hash').title = block.id || hashText;
+        $('s_ts').textContent = block.timestamp;
+        $('s_local').textContent = fmtLocal(block.timestamp, tz);
+        $('s_utc').textContent = fmtUTC(block.timestamp);
+        $('s_date').textContent = fmtDateOnly(block.timestamp, tz);
+        $('s_ntx').textContent = block.tx_count ?? (block.tx && block.tx.length) ?? '—';
+        $('s_weight').textContent = block.weight ?? '—';
+        $('s_size').textContent = block.size ?? '—';
+        rawBlock.textContent = pretty(block);
+
+        // Coinbase tx: first tx in the block list
+        // Esplora returns first 25 txs, starting with the coinbase
+        const txs = await req(`/block/${hashText}/txs`);
+        const coinbase = txs[0];
+        rawTx.textContent = pretty(coinbase);
+
+        // Extract coinbase tag
+        let cbHex = '';
+        let cbAscii = '';
+        if (coinbase?.vin && coinbase.vin.length) {
+          const vin0 = coinbase.vin[0];
+          // Esplora/mempool typically include "coinbase" hex field when is_coinbase=true
+          cbHex = vin0.coinbase || vin0.scriptsig || '';
+          cbAscii = hexToAscii(cbHex);
+        }
+        $('s_cbtag').textContent = cbAscii || '(no readable tag)';
+        $('s_cbtag').title = cbAscii;
+
+        // Guess pool from tag; if unknown, try payout address hint
+        let poolGuess = guessPool(cbAscii);
+
+        // Optional: also show primary payout address (usually vout[0])
+        let payoutAddr = '';
+        if (coinbase?.vout && coinbase.vout.length) {
+          const v0 = coinbase.vout[0];
+          payoutAddr = v0.scriptpubkey_address || '';
+          // Sometimes tags are missing; some pools’ addresses are recognizable, but we won’t hardcode that mapping here.
+        }
+        $('s_payout').textContent = payoutAddr || '(not available)';
+
+        $('s_pool').textContent = poolGuess;
+
+        summary.style.display = '';
+        status.textContent = 'Done.';
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`;
+      }
+    };
+
+    // Auto-run for your earlier example height
+    window.addEventListener('load', () => {
+      $('btnFetch').click();
+    });
+  </script>
+</body>
+</html>
