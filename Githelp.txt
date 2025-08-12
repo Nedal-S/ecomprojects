@@ -1,9 +1,11 @@
 
-GitHub CLI PROCEDURES 
+GitHub CLI PROCEDURES 12 August 2025
 
 git init  (Only first time)
 git status
-git add bitcoinblock.html.    you can list multiple files after git add separated by spaces. ie git add bitcoin.html bitcoin.py
+
+git add bitcoinblock.html.  (you can list multiple files after git add separated by spaces.) git add bitcoin.html bitcoin.py
+
 git commit -m "Add bitcoinblock.html"
 git push -u origin main  
 
