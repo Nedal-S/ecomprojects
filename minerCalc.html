@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Solo Miner Odds</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0c0f14;
+            font-family:Arial,Helvetica,sans-serif;color:#fff}
+  canvas{position:fixed;top:0;left:0;width:100%;height:100%}
+  #panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+         text-align:center;background:rgba(0,0,0,.55);padding:2.2rem 2.8rem;
+         border-radius:1rem;backdrop-filter:blur(4px);min-width:300px}
+  h1{margin:0 0 1rem;font-size:1.9rem}
+  label{display:block;margin:.55rem 0 .3rem}
+  input{width:8.6rem;padding:.35rem;border:none;border-radius:.3rem;text-align:center}
+  button{margin-top:1rem;padding:.45rem 1.3rem;border:none;border-radius:.4rem;
+         font-weight:bold;background:#1e90ff;color:#fff;cursor:pointer;transition:.15s}
+  button.clicked{background:#28a745}
+  #bigTime{margin-top:1rem;font-size:1.25rem;font-weight:700}
+  #odds{margin-top:.6rem;font-size:1.2rem;font-weight:600;min-height:1.6rem}
+  #power{margin-top:.25rem;font-size:1.05rem;font-weight:600;opacity:.9}
+  .sub{opacity:.7;font-size:.8rem;margin-top:.4rem}
+  .toggle{display:inline-flex;gap:6px;justify-content:center;margin-top:.8rem}
+  .toggle button{background:#243241;border:1px solid #2f4155;padding:.35rem .7rem}
+  .toggle button.active{background:#2ea043;border-color:#2ea043}
+</style>
+</head>
+<body>
+  <div class="navbar">
+    <a href="homepage.html">Home</a>
+    <a href="homepage.html">Compare Miners</a>
+    <a href="minerCalc.html">Solo Miner Odds Calculator</a>
+    <a href="minerPPCJS.html">Miner P/L Calculator</a>
+    <a href="guides.html">Guides</a>
+    <a href="blockchains.html">Block Chain Technology</a>
+    <a href="news.html">News</a>
+    <a href="library.html">Library</a>
+    <a href="glossary.html">Glossary</a>
+    <a href="about.html">About</a>
+  </div>
+
+<canvas id="bg"></canvas>
+
+<div id="panel">
+  <h1>Solo Miner Odds</h1>
+
+  <label>Hashrate (TH/s)</label>
+  <input id="hash" type="number" step="0.01" value="1.10">
+
+  <label>Wattage (W)</label>
+  <input id="watts" type="number" step="1" value="14">
+
+  <label>Electricity ($/kWh)</label>
+  <input id="kwh" type="number" step="0.001" value="0.15">
+<div>
+</div>
+<p></p>
+<div id="power">Power cost: —</div>
+
+    <class="toggle" id="periodToggle">
+    <button data-p="day"   class="active">Day</button>
+    <button data-p="week">Week</button>
+    <button data-p="month">Month</button>
+    <button data-p="year">Year</button>
+  
+
+  <button id="btn" onclick="calcOdds()">Calculate Odds</button>
+
+  <div id="bigTime">Expected solo time: …</div>
+  <div id="odds">Loading …</div>
+ 
+  <div class="sub" id="meta"></div>
+</div>
+
+<script>
+/* ========= animated background ========= */
+const cvs=document.getElementById('bg'),ctx=cvs.getContext('2d');
+let cssW,cssH,pts=[];const COUNT=110,SPEED=.55,LINK=120;
+function resize(){
+  cssW=innerWidth;cssH=innerHeight;
+  const dpr=devicePixelRatio||1;
+  cvs.style.width=cssW+'px';cvs.style.height=cssH+'px';
+  cvs.width=cssW*dpr;cvs.height=cssH*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  seed();
+}
+addEventListener('resize',resize); resize();
+function seed(){
+  pts=[];for(let i=0;i<COUNT;i++){
+    pts.push({x:Math.random()*cssW,y:Math.random()*cssH,
+              vx:(Math.random()*2-1)*SPEED,vy:(Math.random()*2-1)*SPEED});
+  }
+}
+function loop(){
+  ctx.clearRect(0,0,cssW,cssH);
+  for(const p of pts){
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0||p.x>cssW)p.vx*=-1;
+    if(p.y<0||p.y>cssH)p.vy*=-1;
+    ctx.fillStyle='#66ccff';ctx.fillRect(p.x,p.y,2,2);
+  }
+  for(let i=0;i<COUNT;i++)for(let j=i+1;j<COUNT;j++){
+    const a=pts[i],b=pts[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy);
+    if(d<LINK){ctx.strokeStyle=`rgba(102,204,255,${1-d/LINK})`;
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+  }
+  requestAnimationFrame(loop);
+}
+loop();
+
+/* ========= odds calculator ========= */
+const PROXY = "https://api.allorigins.win/raw?url=";
+const DIFF_URL = PROXY + encodeURIComponent("https://blockchain.info/q/getdifficulty");
+
+const oddsDiv = document.getElementById('odds');
+const powerDiv= document.getElementById('power');
+const bigTime = document.getElementById('bigTime');
+const metaDiv = document.getElementById('meta');
+const btn     = document.getElementById('btn');
+const hashEl  = document.getElementById('hash');
+const wattsEl = document.getElementById('watts');
+const kwhEl   = document.getElementById('kwh');
+
+const periodButtons = document.querySelectorAll('#periodToggle button');
+let currentPeriod = 'day';
+periodButtons.forEach(b=>{
+  b.addEventListener('click', ()=>{
+    periodButtons.forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    currentPeriod = b.dataset.p;
+    calcOdds(); // recalc immediately on toggle
+  });
+});
+
+let currentDifficulty = null;
+
+function fmtInt(n){
+  if(!isFinite(n)) return '∞';
+  if(n>1e12) return n.toExponential(2).replace('+','');
+  return n.toLocaleString(undefined,{maximumFractionDigits:0});
+}
+function fmtTime(sec){
+  if(!isFinite(sec)) return '∞';
+  const years = sec / 31557600; // 365.25d
+  if(years >= 1000) return `${fmtInt(Math.round(years))} years`;
+  if(years >= 10)   return `${years.toFixed(1)} years`;
+  if(years >= 1)    return `${years.toFixed(2)} years`;
+  const days = sec/86400;
+  if(days >= 2)     return `${Math.round(days)} days`;
+  if(sec >= 3600)   return `${(sec/3600).toFixed(1)} hours`;
+  return `${Math.round(sec)} sec`;
+}
+function secondsFor(period){
+  switch(period){
+    case 'week':  return 7*86400;
+    case 'month': return 30*86400;
+    case 'year':  return 365*86400;
+    default:      return 86400;
+  }
+}
+
+async function fetchDifficulty(){
+  try{
+    const r = await fetch(DIFF_URL, { cache:"no-store" });
+    const t = await r.text();
+    const d = parseFloat(t);
+    if(!isFinite(d)) throw new Error("Bad diff");
+    currentDifficulty = d;
+    return d;
+  }catch(e){
+    currentDifficulty = 8.0e13; // fallback (~80T)
+    return currentDifficulty;
+  }
+}
+
+async function calcOdds(){
+  btn.classList.add('clicked'); setTimeout(()=>btn.classList.remove('clicked'),200);
+
+  const TH = parseFloat(hashEl.value)||0;
+  const W  = parseFloat(wattsEl.value)||0;
+  const K  = parseFloat(kwhEl.value)||0;
+
+  try{
+    const diff = currentDifficulty ?? await fetchDifficulty();
+    const Hs = TH * 1e12;                 // TH/s → H/s
+    const two32 = 4294967296;             // 2^32
+    const expSeconds = (diff * two32) / Math.max(Hs,1e-12);
+
+    // Period probability
+    const T = secondsFor(currentPeriod);
+    const p = 1 - Math.exp(-T / expSeconds);          // success prob in chosen period
+    const oneIn = p > 0 ? Math.round(1 / p) : Infinity;
+
+    // Power cost (per day / month / year)
+    const costDay   = (W * 24 / 1000) * K;
+    const costMonth = costDay * 30;
+    const costYear  = costDay * 365;
+
+    // Outputs
+    bigTime.textContent = `Expected solo time: ~${fmtTime(expSeconds)}`;
+    oddsDiv.textContent = `Chance (${currentPeriod}): 1 in ${fmtInt(oneIn)}`;
+    powerDiv.textContent= `Power cost: $${costDay.toFixed(2)}/day • $${costMonth.toFixed(2)}/month • $${costYear.toFixed(2)}/year`;
+    metaDiv.textContent = `Difficulty: ${diff.toExponential(2)} • Hashrate: ${TH.toFixed(2)} TH/s`;
+
+  }catch(err){
+    console.error(err);
+    oddsDiv.textContent = "⚠️ Error computing odds";
+    powerDiv.textContent= "";
+    bigTime.textContent = "";
+    metaDiv.textContent = "";
+  }
+}
+
+// initial load + refresh difficulty every 30 min
+fetchDifficulty().then(calcOdds);
+setInterval(fetchDifficulty, 30*60*1000);
+
+// recalc on input change for snappier UX
+['input','change'].forEach(ev=>{
+  hashEl.addEventListener(ev, calcOdds);
+  wattsEl.addEventListener(ev, calcOdds);
+  kwhEl.addEventListener(ev, calcOdds);
+});
+</script>
+</body>
+</html>
