@@ -26,16 +26,21 @@ small{display:block;margin-top:.7rem;font-size:.75rem;opacity:.65}
 <canvas id="bg"></canvas>
 
 <div id="panel">
-  <h1>Mining&nbsp;P / L</h1>
+  <h1>Bitcoin Mining&nbsp;P / L</h1>
 
   <label>Hashrate (TH/s)</label>
-  <input id="hash"  type="number" step="0.01" value="1.10">
+  <input id="hash" type="number" step="0.01" value="1.10">
 
   <label>Wattage (W)</label>
-  <input id="watts" type="number" step="1"    value="14">
+  <input id="watts" type="number" step="1" value="14">
 
   <label>Electricity&nbsp;($/kWh)</label>
-  <input id="cost"  type="number" step="0.001" value="0.15">
+  <input id="cost" type="number" step="0.001" value="0.15">
+
+  <label>Pool Maintenance Fee (%)</label>
+  <input id="fee" type="number" step="0.1" value="1.5">
+
+  <p></p>
 
   <button id="updateBtn" onclick="update()">Update&nbsp;Now</button>
   <div id="status">Loading …</div>
@@ -52,7 +57,7 @@ function resize(){
   const dpr=devicePixelRatio||1;
   cvs.style.width=cssW+'px'; cvs.style.height=cssH+'px';
   cvs.width =cssW*dpr; cvs.height=cssH*dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);           // 1 CSS px → device px
+  ctx.setTransform(dpr,0,0,dpr,0,0);
   initPts();
 }
 addEventListener('resize',resize); resize();
@@ -91,6 +96,7 @@ const btcURL="https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_curre
 const hash=document.getElementById('hash'),
       watts=document.getElementById('watts'),
       cost=document.getElementById('cost'),
+      fee=document.getElementById('fee'),
       status=document.getElementById('status'),
       btn=document.getElementById('updateBtn');
 
@@ -99,16 +105,28 @@ const j=u=>fetch(u).then(r=>r.json());
 async function update(){
   btn.classList.add('clicked'); setTimeout(()=>btn.classList.remove('clicked'),200);
   try{
-    const TH=+hash.value||0, W=+watts.value||0, k=+cost.value||0;
+    const TH=+hash.value||0,
+          W=+watts.value||0,
+          k=+cost.value||0,
+          f=+fee.value||0;
+
     const [md,btc]=await Promise.all([j(mdURL),j(btcURL)]);
     const btcPerTh=+md.sha256.estimate_current, price=btc.bitcoin.usd;
-    const gross=btcPerTh*TH*price,
-          power=(W*24/1e3)*k,
-          net=gross-power;
-    status.textContent=`${net>=0?'🟢':'🔴'} Net ${net.toFixed(4)} USD / day`;
-  }catch(e){console.error(e);status.textContent="⚠️ Data fetch error";}
+
+    const gross=btcPerTh*TH*price;
+    const poolFeeAmount = gross * (f / 100);
+    const afterFee = gross - poolFeeAmount;
+    const powerCost = (W * 24 / 1000) * k;
+    const net = afterFee - powerCost;
+
+    status.textContent = `${net >= 0 ? '🟢' : '🔴'} Net ${net.toFixed(4)} USD / day (after ${f.toFixed(1)}% pool fee)`;
+  }catch(e){
+    console.error(e);
+    status.textContent="⚠️ Data fetch error";
+  }
 }
 update(); setInterval(update,10*60*1000);
 </script>
 </body>
 </html>
+
