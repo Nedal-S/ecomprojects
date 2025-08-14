@@ -1,0 +1,11 @@
+git status
+git init
+git add filename.py
+git commit -m "my message"
+git push https://github.com/Nedal-S/Python-Projects.git (main or push)
+
+curl -o newtext.txt https://raw.githubusercontent.com/Nedal-S/Python-Projects/push/newtext.txt
+curl -o newtext.txt https://raw.githubusercontent.com/Nedal-S/Python-Projects/push/newtext.txt
+
+curl -o nealm.txt https://raw.githubusercontent.com/Nedal-S/Python-Projects/push/nealm.txt
+curl -o nealm.txt https://raw.githubusercontent.com/Nedal-S/Python-Projects/push/nealm.txt
